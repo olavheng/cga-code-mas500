@@ -1,0 +1,232 @@
+/*
+ * This file is used to show the forward kinematics for the Comau Smart-5 6-dof industrial robot
+ *
+ * Created by Olav Heng
+ */
+DefVarsN3();
+// setting for the visualization window
+:DRAW_POINT_AS_SPHERE;
+:_BGColor  =  White;
+:    Base  = e0^e1^e2^(2*einf);
+//Global coordinate system
+	:Red;
+	DrawArrow(e0,VecN3(0.3,0,0));
+	:Green;
+	DrawArrow(e0,VecN3(0,0.3,0));
+	:Blue;
+	DrawArrow(e0,VecN3(0,0,0.3));
+
+//input: joint angles set on the visualization window %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+set_angle =
+{
+	theta_1 = Slider("theta_1", -Pi, Pi, 0.001, 0);
+	theta_2 = Slider("theta_2", -Pi, Pi, 0.001, 0);
+	theta_3 = Slider("theta_3", -Pi, Pi, 0.001, 0);
+	
+	theta_4 = Slider("theta_4", -Pi, Pi, 0.001, 0);
+	theta_5 = Slider("theta_5", -Pi, Pi, 0.001, 0);
+	theta_6 = Slider("theta_6", -Pi, Pi, 0.001, 0);
+	
+	angle=[theta_1,theta_2,theta_3,theta_4,theta_5,theta_6]
+}
+
+
+// internal physical parameters of the robot %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+robot_parameters = 
+{
+	a1 		= 	0.125;
+	d1 		= 	0.400;
+	a2 		= 	0.455;
+	a3		= 	0.135;
+	d4 		= 	0.420;
+	d6 		= 	0.080;
+	alpha1	=	Pi/2;
+	alpha2	=	0;
+	alpha3	=	Pi/2;
+	alpha4	=	-Pi/2;
+	alpha5	=	Pi/2;
+	alpha6	=	0;
+	param 	= 
+		[[d1,a1,alpha1],
+		 [0 ,a2,alpha2],
+		 [0 ,a3,alpha3],
+		 [d4,0 ,alpha4],
+		 [0 ,0 ,alpha5],
+		 [d6,0 ,alpha6]]
+}
+
+//locating the fundamental actuated joints on the robot %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+joint_position = 
+{
+	// Inputs
+	theta = _P(1); //config
+	param = ::robot_parameters(); //robot parameter_dh-table
+	P_0 = e0;  //base point
+	
+	// Find P_1
+	R1z		=	RotorN3(e3,theta(1));
+	 T1		=	TranslatorN3(param(1)(2),0,param(1)(1));
+	R1x		=	RotorN3(e1,param(1)(3));
+	 D1		=	R1z*T1*R1x;
+	P_1 	=	D1*(P_0)*(D1~);
+
+	//Find P_2
+	R2z		=	RotorN3(e3,theta(2)+Pi/2);
+	 T2		=	TranslatorN3(param(2)(2),0,0);
+	 D2		=	D1 * R2z * T2;
+	P_2		=	D2 * (P_0) * (D2~);
+	
+	//Find P_3
+	R3z		=	RotorN3(e3,theta(3));
+	 T3		=	TranslatorN3(param(3)(2),0,0);
+	R3x		=	RotorN3(e1,param(3)(3));
+	 D3		=	D2 * R3z * T3 * R3x;
+	P_3		=	D3 * (P_0) * (D3~);
+	
+	//Find P_C, the wrist center
+	R4z		=	RotorN3(e3,theta(4));
+	 T4		=	TranslatorN3(0,0,param(4)(1));
+	R4x		=	RotorN3(e1,param(4)(3));
+	 D4		=	D3 * R4z * T4 * R4x;
+	P_4		=	D4 * (P_0) * (D4~);
+	
+	//Find P_E, the end-effector position
+	R5z		=	RotorN3(e3,theta(5));
+	 T5		=	TranslatorN3(0,0,0);
+	R5x		=	RotorN3(e1,param(5)(3));
+	 D5		=	D4 * R5z * T5 * R5x;
+	
+	R6z		=	RotorN3(e3,theta(6)+Pi);
+	 T6		=	TranslatorN3(0,0,param(6)(1));
+	 D6		=	D5 * R6z * T6;
+	P_6		=	D6 * (P_0) * (D6~);
+	
+	//vectors of the end-effector
+	
+	:Red;
+	n_e = D6*(e1)*(D6~);
+	:Green;
+	s_e = D6*(e2)*(D6~);
+	:Blue;
+	a_e = D6*(e3)*(D6~);
+	
+	//vectors of the end-effector, only for vizualitation
+	n1 = D6*VecN3(0.3,0,0)*(D6~);
+	s1 = D6*VecN3(0,0.3,0)*(D6~);
+	a1 = D6*VecN3(0,0,0.3)*(D6~);
+
+	X = [[P_0, P_1, P_2, P_3, P_4, P_6],[n_e,s_e,a_e],[n1,s1,a1]]
+}
+
+
+// Atan2 function for compution of angles %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+atan2 = 
+{
+		y = _P(1);
+		x = _P(2);
+	angle = 0;
+	
+	if(x > 0){
+		angle = atan(y/x);
+	}
+	else if(x < 0 && y >= 0){
+		angle = atan(y/x) + 3.1415;
+	}
+	else if(x < 0 && y < 0){
+		angle = atan(y/x) - 3.1415;
+	}
+	else if(x == 0 && y > 0){
+		angle = Pi/2;
+	}
+	else if(x == 0 && y < 0){
+		angle = -Pi/2;
+	}
+	angle
+}
+
+
+// Function for drawing the robot in the visualization window %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+draw_robot =
+{
+	radius = 0.015;
+	:Blue;
+	DrawSphere(_P(1)(1),radius+0.015);
+	count = Size(_P(1));
+	i = 1;
+	loop
+	{ if (i > count-1) break;
+	
+		br = _P(1)(i+1)-_P(1)(i);
+		br = VecN3(br(2),br(3),br(4));
+		
+		:Blue;
+		DrawSphere(_P(1)(i+1),radius+0.015);
+		:Red;
+		DrawCylinder(_P(1)(i),br,radius);
+		
+		i = i + 1;
+	}
+}
+// Function for drawing the end-effecor vectors in the visualization window %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+draw_vectors =
+{_BGColor=White;
+	p6 = _P(1);
+	pv = _P(2);
+	
+	:Red;
+	DrawArrow(p6,pv(1));
+	:Green;
+	DrawArrow(p6,pv(2));
+	:Blue;
+	DrawArrow(p6,pv(3));
+}
+
+
+// Here the script begins %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+       theta = set_angle(); //actuator angles from vizualization window
+
+		   X = joint_position(theta);  //joint positions
+    Position = VecE3(X(1)(6));		//position of the end-effector
+
+?PositionXYZ = [Position(2),Position(3),Position(4)]; //position of the end-effector written in the output window
+
+draw_robot(X(1)); //drawing the robot in visualization window
+draw_vectors(X(1)(6),X(3)); //drawing the orientation of the end-effector
+
+n_e = (X(2)(1));	//x-axis at the end-effector
+s_e = (X(2)(2));  //y-axis at the end-effector
+a_e = (X(2)(3));  //z-axis at the end-effector
+
+
+//computing the orientation of the end-effectors from vectors n_e,s_e,a_e
+R11 = n_e(2);
+R21 = n_e(3);
+R31 = n_e(4);
+R12 = s_e(2);
+R22 = s_e(3);
+R32 = s_e(4);
+R13 = a_e(2);
+R23 = a_e(3);
+R33 = a_e(4);
+
+if(abs(R33)< 1 ) //algorithm for Z-Y-Z rotation
+{	if(R33>-1)
+	{thetaY  = acos(R33);
+ 	  phiZ1  = atan2(R23,R13);
+ 	  psiZ2  = atan2(R32,-R31);
+	}else
+	{thetaY  = Pi;
+ 	  phiZ1  = -atan2(R21,R22);
+ 	  psiZ2  = 0;
+	}
+}else 
+{	thetaY   = 0;
+ 	 phiZ1   = atan2(R21,R22);
+ 	 psiZ2   = 0;
+}
+
+?RotationZYZ = [phiZ1,thetaY,psiZ2];	// z-y-z rotation of the end-effector
+
+
+

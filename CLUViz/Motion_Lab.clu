@@ -1,0 +1,490 @@
+/*
+ * This file is used to show the inverse kinematics for a stewart platform
+ *
+ * Created by Olav Heng
+ */
+ 
+DefVarsN3();
+// setting for the visualization window
+_DoAnimate = 1;	//used for enabling animation
+:DRAW_POINT_AS_SPHERE;
+:_BGColor = White;  //backgroud color
+:Base = e0^e1^e2^(50*einf); 
+:Red;
+	DrawArrow(e0,VecN3(0.3,0,0));
+	:Green;
+	DrawArrow(e0,VecN3(0,0.3,0));
+	:Blue;
+	DrawArrow(e0,VecN3(0,0,0.3));
+//functions //////////////////////////////////////////////////////////////////////////////////////////////////////
+set_position_robot =
+{
+	pos_x = Slider("X Robot", -1, 2, 0.01, 0);
+	pos_y = Slider("Y Robot", -1, 2, 0.01, 1.5);
+	pos_z = Slider("Z Robot", 1, 3, 0.01, 1.5);
+	
+	T06 = TranslatorN3(pos_x, pos_y, pos_z);
+	p = [VecE3(pos_x, pos_y, pos_z),T06]
+}
+
+//input: rotation of the end-effector set on the visualization window %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+set_rotation_robot = 
+{
+	Azimuth   = 	Slider("Azimuth Robot", -Pi, Pi, 0.01, -Pi/2);
+	Elevation = 	Slider("Elevation Robot", -Pi, Pi, 0.01, Pi/2);
+	Roll 	  = 	Slider("Roll Robot", -Pi, Pi, 0.01, 0);
+	
+	Rz1 = RotorE3(0,0,1,Azimuth);		//Rotation around Z-axis
+	Ry = RotorE3(0,1,0,Elevation);	//Rotation around Y-axis
+	Rz2 = RotorE3(0,0,1,Roll);		//Rotation around Z-axis
+	
+	R06 = Rz1 * Ry * Rz2;				//Rotation function of point 6.
+	
+	coord = [VecE3(1,0,0) , VecE3(0,1,0) , VecE3(0,0,1)];
+	
+	rot6 = R06*coord*(~R06);
+	n_e = rot6(1);	//normal vector
+	s_e = rot6(2);	//slide vector
+	a_e = rot6(3);	//approach vector  
+	
+	//next lines are used for drawing the orientation and not for computing
+	Rz1n = RotorN3(0,0,1,Azimuth);		//Rotation around Z-axis
+	Ry1n = RotorN3(0,1,0,Elevation);	//Rotation around Y-axis
+	Rz2n = RotorN3(0,0,1,Roll);		//Rotation around Z-axis
+	
+	R06_N3 = Rz1n*Ry1n*Rz2n;
+	
+	rot = [[n_e, s_e, a_e] , R06_N3]
+}
+set_configurations =
+{
+	k_wrist = 2*(CheckBox("Wrist",0)-0.5);
+	k_A = 2*(CheckBox("Front/Back",1)-0.5);
+	k_B = 2*(CheckBox("Elbow",1)-0.5);
+	//k_C = 2*(CheckBox("C",0)-0.5);
+	k = [k_wrist,k_A, k_B,k_C]
+}
+
+//set pose of the stewart platform in the visualization window
+set_pose =
+{ 	ani 	= (CheckBox("Start Animation",0));
+	speed	= Slider("Speed animation", 0, 1, 0.001, 0)*Time;
+	xpos 	= Slider("X", -Pi, Pi, 0.001, 0);
+	ypos 	= Slider("Y", -Pi, Pi, 0.001, 0);
+	zpos 	= Slider("Z", -Pi, Pi, 0.001, 0)         + ani*1/8*sin(speed)*0;;
+	
+	psi	    = Slider("Roll" , -Pi, Pi, 0.001, 0)     + ani*Pi/30*sin(speed/2)*1;;
+	theta   = Slider("Pitch", -Pi, Pi, 0.001, 0)     + ani*Pi/30*sin(speed*2)*1;
+	phi   	= Slider("Yaw"  , -Pi, Pi, 0.001, 0)     + ani*Pi/30*sin(speed)*1;
+	
+	pose=[xpos,ypos,zpos,psi,theta,phi]
+}
+// int
+// internal physical parameters of the robot %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+robot_parameters = 
+{
+	a1 		= 0.225;
+	d1 		= 0.400;
+	a2 	    = 0.455;
+	a3 		= 0.135;
+	d4 		= 0.420;
+	d6  	= 0.080;
+	alpha1  = Pi/2;
+	alpha2  = 0;
+	alpha3  = Pi/2;
+	alpha4  = -Pi/2;
+	alpha5  = Pi/2;
+	alpha6  = 0;
+	param = 
+		[[d1 , a1 , alpha1],
+		 [0  , a2 , alpha2],
+		 [0  , a3 , alpha3],
+		 [d4 , 0  , alpha4],
+		 [0  , 0  , alpha5],
+		 [d6 , 0  , alpha6]]
+}
+	
+///locating the fundamental actuated joints on the robot %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+joint_position = 
+{
+	// Inputs
+	k = _P(1)(1); //config
+	ka =  _P(1)(2);
+	kb =  _P(1)(3);
+	?P_base = _P(4);
+	?pose = _P(5); 
+	phi   = RotorN3(1,0,0,pose(4));
+	theta = RotorN3(0,1,0,pose(5));
+	psi   = RotorN3(0,0,1,pose(6)); 
+	phiE   = RotorE3(1,0,0,pose(4));
+	thetaE = RotorE3(0,1,0,pose(5));
+	psiE   = RotorE3(0,0,1,pose(6));
+	R_stewart = psi*theta*phi; 
+	RE_stewart = phiE*thetaE*psiE; 
+	
+	:Normalvector_stewart = R_stewart*(e3)*(R_stewart~);  
+ 
+
+	p = _P(2); //end-effector position
+	r = _P(3); //end-effector rotation
+	param = ::robot_parameters(); //robot parameter_dh-table
+		T = TranslatorN3(pose(1),pose(3),pose(3)+1);
+		PAT = T*R_stewart;
+_BGColor=White;
+	:Blue;
+	:P_0 = P_base;  //base point
+	:Black;
+	:P_A = VecN3(VecE3(P_base)+VecE3(RE_stewart*VecE3(0,0,param(1)(1))*(RE_stewart~))); //helping point for construction
+	//:P_A = PAT*VecN3(0.518,1.93,param(1)(1))*(PAT~); //helping point for construction
+	
+	:Blue;
+	?P_E = VecN3(p); //end effector point
+	
+	?P_C = VecN3(VecE3(p) - param(6)(1)*(r(3))); //wrist point, joint 5 and 6
+	
+	
+	
+	// Find P_1
+	:Color(1,0.3,0,0.3);
+	:PL_0AC =(P_base^P_A^P_C^einf)*; //vertical plane through wrist point
+	?PAPL = VecE3(P_base);
+	:Yellow;
+	:PL_PA  = PAT*(*(e3 + (param(1)(1))*einf))*(PAT~);  //horizontal plan through P_A
+	:Color(1,0,1,0.2);
+	:S_0 = SphereN3(P_0, sqrt((param(1)(1)*param(1)(1)) + (param(1)(2)*param(1)(2)))); //Sphere(center,radius) sphere at base point
+	:Blue;
+	Q_1  = (((S_0*)^(*PL_PA)).(PL_0AC*)); //point par for P_1
+	:P_1 = (Q_1 - ka*abs(Q_1)) / (-einf.Q_1);  //selecting point P_1
+	:Magenta;
+	PL_0A1 = (P_0^P_A^P_1^einf*4)*;
+	:ci =((S_0*)^(PL_PA*))*;
+	?ci;
+	//Find P_2
+	
+	:Color(0,0,1,0.3);
+	S_1  = SphereN3(P_1, sqrt((param(2)(2)*param(2)(2)))); 	//Sphere(center,radius) sphere at P_1 point
+	:Color(0,1,0,0.3);
+	S_C2 = SphereN3(P_C, sqrt((param(3)(2)*param(3)(2)) + (param(4)(1)*param(4)(1)))); //Sphere(center,radius) sphere at P_C point
+	:Blue;
+	Q_2   = (((S_1*)^(*S_C2)).(PL_0A1*)); 		//point par for P_2
+	:P_2  =(Q_2 + kb*(abs(Q_2))) / (-einf.Q_2); //selecting point P_2
+	
+
+	
+	
+	//Find P_3
+	
+	:Color(0,0,1,0.3);
+	S_2 = SphereN3(P_2, sqrt((param(3)(2)*param(3)(2)))); 	//Sphere(center,radius) sphere at P_2 point
+	:Color(0,1,0,0.3);
+	S_C3 = SphereN3(P_C, sqrt((param(4)(1)*param(4)(1))));  //Sphere(center,radius) sphere at P_C point
+	:Blue;
+	Q_3  = (((S_2*)^(*S_C3)).(PL_0A1*)); //point par for P_3
+	P_3 = (Q_3 + (abs(Q_3))) / (-einf.Q_3);//selecting point P_3
+	
+
+	X = [P_0, P_A, P_1, P_2, P_3, P_C, P_E]
+}
+
+// Function for normalizing a multivector
+normalize = 
+{
+	_P(1)/(sqrt(abs(_P(1)*_P(1)~)))
+}
+
+// Atan2 function for compution of joint angles
+atan2 = 
+{
+	y = _P(1);
+	x = _P(2);
+	angle = 0;
+	if(x > 0){
+		angle = atan(y/x);
+	}
+	else if(x < 0 && y >= 0){
+		angle = atan(y/x) + 3.1415;
+	}
+	else if(x < 0 && y < 0){
+		angle = atan(y/x) - 3.1415;
+	}
+	else if(x == 0 && y > 0){
+		angle = Pi/2;
+	}
+	else if(x == 0 && y < 0){
+		angle = -Pi/2;
+	}
+	angle
+}
+
+//computing of the actuated joint angles
+find_angles = 
+{
+	k_wrist  = _P(1);  //wrist up/down
+	r		 = _P(2);	 	 //orientation vectors of end-effector
+	X 		 = _P(3);		//joint positions
+	_BGColor=White;
+	
+	
+	//lines
+	L_A1  = (X(2)^X(3)^einf)*;		//line through P_A,P_1
+	L_12  = (X(3)^X(4)^einf)*;		//line through P_1,P_2
+	L_23  = (X(4)^X(5)^einf)*;		//line through P_2,P_3
+	L_3C  = (X(5)^X(6)^einf)*;		//line through P_3,P_C
+	L_C6  = (X(6)^X(7)^einf)*;		//line through P_C,P_6
+	
+	
+	//planes
+	:Green;
+	PL_0A1 = (::normalize(X(1)^X(2)^X(3)^einf))*; //vertical plane through wrist point
+	PL_3CE = (::normalize((-(L_3C*)^X(7))))*;  //plane through P_3,P_C,P_E
+	
+	
+	//angle calculation
+	//joint 1
+	:a_1 = (PL_0A1)*;
+	:Blue;
+	:b_1 = e2*;
+	:Red;
+	N_1 = (e2^e1);
+	
+	?theta_1 = ::atan2((a_1^b_1)/N_1, a_1.b_1);
+	
+	//joint 2
+	a_2 = ((L_A1*).e0).einf;
+	b_2 = ((L_12*).e0).einf;
+	N_2 = ::normalize(((PL_0A1*).e0).einf);
+	
+	theta_2 = ::atan2( (a_2^b_2)/N_2, a_2.b_2)-Pi/2;
+	
+	//joint 3
+	a_3 = b_2;
+	b_3 = ((L_3C*).e0).einf;
+	N_3 = N_2;
+	
+	theta_3 = ::atan2((a_3^b_3)/N_3, a_3.b_3) + (Pi/2);
+	
+	//joint 4
+	a_4 = (PL_0A1*);
+	b_4 = k_wrist*(-(PL_3CE*)^e0).einf;
+	N_4 = ::normalize(((L_3C)^e0).einf);
+	
+	?theta_4 = ::atan2((a_4^b_4)/N_4, a_4.b_4); 
+	
+	//joint 5
+	a_5 = ((L_C6*).e0).einf;
+	b_5 = ((L_3C*).e0).einf;
+	N_5 = ::normalize(-k_wrist*((PL_3CE*).e0).einf);
+	
+	theta_5 = ::atan2((a_5^b_5)/N_5, a_5.b_5);
+
+	//joint 6
+	a_6 = -k_wrist*(((PL_3CE*))^einf).e0;
+	b_6 = ((((VecN3(r(2)) - e0)*)^einf).e0);
+	//N_6 = -(((VecN3(r(2))-e0)^einf).e0)^(((VecN3(r(1))-e0)^einf).e0);
+	N_6 = ((((VecN3(r(3)) - e0)*).e0).einf);
+	
+	?theta_6 = ::atan2((a_6^b_6)/N_6, a_6.b_6 );
+	
+	theta   = [theta_1, theta_2, theta_3, theta_4, theta_5, theta_6]
+}
+
+
+// Function for drawing the robot in the visualization window %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+draw_robot =
+{_BGColor = White;
+	
+	joints = [_P(1)(1),_P(1)(3),_P(1)(4),_P(1)(5),_P(1)(6),_P(1)(7)];;
+	count  = Size(joints);
+	radius = 0.015;
+	:Blue;
+	DrawSphere(joints(1),radius+0.015);
+	i = 1;
+	loop
+	{
+		if (i > count-1) break;
+		br = joints(i+1) - joints(i);
+		br = VecN3(br(2),br(3),br(4));
+		:Blue;
+		DrawSphere(joints(i+1),radius+0.015);
+		:Red;
+		DrawCylinder(joints(i),br,radius);
+		i = i + 1;
+	}
+}
+// Function for drawing the end-effecor vectors in the visualization window %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+draw_vectors =
+{_BGColor=White;
+	T06n = _P(1);
+	R06n = _P(2);
+	D = T06n*R06n; 
+	
+	p6 = D*e0*(D~);
+	
+	
+	v1 = D*VecN3(0.3,0,0)*(D~);
+	v2 = D*VecN3(0,0.3,0)*(D~);
+	v3 = D*VecN3(0,0,0.3)*(D~);
+
+	
+	:Red;
+	DrawArrow(p6,v1);
+	:Green;
+	DrawArrow(p6,v2);
+	:Blue;
+	DrawArrow(p6,v3);
+}
+
+
+
+// internal physical parameters of the stewart platform
+parameter = {
+	radius	 = 2;	//radius from center of platform frame to the spherical joints
+	jointloc = [15, 105, 135, 225, 255, 345] / 180*Pi; //location of the spherical joints distributed on a circle
+	
+	a0       = VecN3(radius,0,0);
+	a        = List(6);		//base points
+	bp       = List(6);		//joints on the platform in body frame
+	
+	i = 1;
+	loop { if (i > 6) {break;}
+	j 		 = jointloc(i);
+	Ra  	 = RotorN3(e3 , j);
+	Rb 		 = RotorN3(e3 , 60/180*Pi);
+	
+	a(i)     = Ra * a0 * (Ra~);
+	
+	if (i == 6)                  //shifting joint position in bp so that [a1,a2...] and [bp1,bp2...] corrospond to each other
+    {bp(1)   = Rb * a(i) * (Rb~);}
+    else
+    {bp(i+1) = Rb * a(i) * (Rb~);}
+    
+	i = i+1;
+	}
+	param = [a, bp]
+}
+
+//function for locating the spherical joint on the platform in referense to inertia frame.
+platform_joints = 
+{	:Red;
+	p0   = _P(2);	//home position
+	bp   = _P(3);
+	Tb   = TranslatorN3(_P(1)(1) + p0(1) , _P(1)(2) + p0(2) , _P(1)(3) + p0(3));
+	Rbz  = RotorN3(e3 , _P(1)(6));
+	Rby  = RotorN3(e2 , _P(1)(5));
+	Rbx  = RotorN3(e1 , _P(1)(4));
+	
+	Db   = Tb * Rbz * Rby * Rbx;
+	
+	
+	b1   = Db * bp(1) * (Db~);
+	b2   = Db * bp(2) * (Db~);
+	b3   = Db * bp(3) * (Db~);
+	b4   = Db * bp(4) * (Db~);
+	b5   = Db * bp(5) * (Db~);
+	b6   = Db * bp(6) * (Db~);
+	
+	
+	joints=[b1,b2,b3,b4,b5,b6]
+}
+
+//computing the length between base points "A" and platform points "B".
+act_length =
+{
+	A     = _P(1);
+	B     = _P(2);
+	
+ 	count = Size(_P(1));
+	i     = 1;
+	inner = List(count);
+	
+	loop
+	{
+		if (i > count) break;
+	
+		inner(i) = sqrt(2*abs(A(i).B(i)));
+		
+		i = i + 1;
+	}
+
+	length=inner
+} 
+
+// Draw the stewart platform
+draw_stewart =
+{_BGColor = White;
+	
+	B 	    = _P(2); //platform points
+	A 	    = _P(1); //base points
+	
+	:Red; //color of the platform frame
+	
+	count   = Size(_P(1));
+	count2  = Size(_P(2));
+	radius  = 0.02;		
+	
+	i = 1;
+	loop	// drawing the platform frame
+	{
+		if (i > count-1) break;
+		br = B(i+1) - B(i);
+		br = VecN3(br(2),br(3),br(4));
+		DrawSphere(B(i+1),radius);
+		DrawCylinder(B(i),br,radius);
+		i = i + 1;
+	}	
+		br = B(1) - B(count);
+		br = VecN3(br(2),br(3),br(4));
+		DrawCylinder(B(i),br,radius);
+		
+	
+	:Blue; //color of the legs
+	
+	i = 1;
+	loop	//drawing the platform legs
+	{
+		if (i > count) break;
+		br = B(i) - A(i);
+		br = VecN3(br(2),br(3),br(4));
+		DrawSphere(A(i),radius);
+		DrawCylinder(A(i),br,radius);
+		
+		i = i + 1;
+	}
+}
+
+//script ///////////////////////////////////////////////////////////////////////////////////////
+
+//joint location parameter: 
+?param=parameter(); 
+
+//input pose from vizualisation window:
+?pose=set_pose();
+
+//home position:
+p0=[0,0,1];
+
+//platfrom joint position:
+B = platform_joints(pose,p0,param(2));
+//base joint position:
+A = param(1);
+
+//drawing the stewart platform in vizualisation window:
+draw_stewart(A,B); 
+
+SetTextPrec(5); //number of decimals in output window:
+
+//Length of the platfrom legs
+?Length =act_length(A,B);
+
+P_Base = B(2);
+// Here the script begins
+k = set_configurations(); //wrist up/down
+p = set_position_robot(); //position of end-effector
+r = set_rotation_robot(); //orientation vectors of end-effector [n_e, s_e, a_e] (R-matrix)
+
+X = joint_position(k,p(1),r(1),P_Base,pose); //joint position
+
+//?THETA = find_angles(k(1),r(1),X); //angles of the actuated joints sent to output window
+
+draw_robot(X); //drawing the robot in visualization window
+draw_vectors(p(2),r(2)); //drawing the end-effector vector in visualization window

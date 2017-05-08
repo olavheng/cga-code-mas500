@@ -1,0 +1,169 @@
+/*
+ * This file is used to show the inverse kinematics for a stewart platform
+ *
+ * Created by Olav Heng
+ */
+ 
+DefVarsN3(); //defines a set of varibales in conformal space
+// setting for the visualization window
+_DoAnimate = 1;	//used for enabling animation
+:DRAW_POINT_AS_SPHERE;
+:_BGColor = White;  //backgroud color
+:Base = e0^e1^e2^(50*einf); //base surface in visualization window
+
+//functions //////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//set pose of the stewart platform in the visualization window
+set_pose =
+{ 	ani 	= (CheckBox("Start Animation",0));
+	speed	= Slider("Speed animation", 0, 1, 0.001, 0)*Time;
+	xpos 	= Slider("X", -Pi, Pi, 0.001, 0);
+	ypos 	= Slider("Y", -Pi, Pi, 0.001, 0);
+	zpos 	= Slider("Z", -Pi, Pi, 0.001, 0)         + ani*1/4*sin(speed);;
+	
+	psi	    = Slider("Roll" , -Pi, Pi, 0.001, 0)     + ani*Pi/20*sin(speed/2);;
+	theta   = Slider("Pitch", -Pi, Pi, 0.001, 0)     + ani*Pi/20*sin(speed*2);
+	phi   	= Slider("Yaw"  , -Pi, Pi, 0.001, 0)     + ani*Pi/5*sin(speed);
+	
+	pose	=	[xpos,ypos,zpos,psi,theta,phi]
+}
+
+// internal physical parameters of the stewart platform
+parameter = {
+	radius	 = 2;	//radius from center of platform frame to the spherical joints
+	jointloc = [15, 105, 135, 225, 255, 345] / 180*Pi; //location of the spherical joints distributed on a circle
+	
+	a0       = VecN3(radius,0,0);
+	a        = List(6);		//base points
+	bp       = List(6);		//joints on the platform in body frame
+	
+	i = 1;
+	loop { if (i > 6) {break;}
+	j 		 = jointloc(i);
+	Ra  	 = RotorN3(e3 , j);
+	Rb 		 = RotorN3(e3 , 60/180*Pi);
+	
+	a(i)     = Ra * a0 * (Ra~);
+	
+	if (i == 6)                  //shifting joint position in bp so that [a1,a2...] and [bp1,bp2...] corrospond to each other
+    {bp(1)   = Rb * a(i) * (Rb~);}
+    else
+    {bp(i+1) = Rb * a(i) * (Rb~);}
+    
+	i = i+1;
+	}
+	param = [a, bp]
+}
+
+//function for locating the spherical joint on the platform in referense to inertia frame.
+platform_joints = 
+{	:Red;
+	p0   = _P(2);	//home position
+	bp   = _P(3);
+	Tb   = TranslatorN3(_P(1)(1) + p0(1) , _P(1)(2) + p0(2) , _P(1)(3) + p0(3));
+	Rbz  = RotorN3(e3 , _P(1)(6));
+	Rby  = RotorN3(e2 , _P(1)(5));
+	Rbx  = RotorN3(e1 , _P(1)(4));
+	
+	Db   = Tb * Rbz * Rby * Rbx;
+	
+	
+	b1   = Db * bp(1) * (Db~);
+	b2   = Db * bp(2) * (Db~);
+	b3   = Db * bp(3) * (Db~);
+	b4   = Db * bp(4) * (Db~);
+	b5   = Db * bp(5) * (Db~);
+	b6   = Db * bp(6) * (Db~);
+	
+	
+	joints=[b1,b2,b3,b4,b5,b6]
+}
+
+//computing the length between base points "A" and platform points "B".
+act_length =
+{
+	A     = _P(1);
+	B     = _P(2);
+	
+ 	count = Size(_P(1));
+	i     = 1;
+	inner = List(count);
+	
+	loop
+	{
+		if (i > count) break;
+	
+		inner(i) = sqrt(2*abs(A(i).B(i)));
+		
+		i = i + 1;
+	}
+
+	length=inner
+} 
+
+// Draw the stewart platform
+draw_stewart =
+{_BGColor = White;
+	
+	B 	    = _P(2); //platform points
+	A 	    = _P(1); //base points
+	
+	:Red; //color of the platform frame
+	
+	count   = Size(_P(1));
+	count2  = Size(_P(2));
+	radius  = 0.02;		
+	
+	i = 1;
+	loop	// drawing the platform frame
+	{
+		if (i > count-1) break;
+		br = B(i+1) - B(i);
+		br = VecN3(br(2),br(3),br(4));
+		DrawSphere(B(i+1),radius);
+		DrawCylinder(B(i),br,radius);
+		i = i + 1;
+	}	
+		br = B(1) - B(count);
+		br = VecN3(br(2),br(3),br(4));
+		DrawCylinder(B(i),br,radius);
+		
+	
+	:Blue; //color of the legs
+	
+	i = 1;
+	loop	//drawing the platform legs
+	{
+		if (i > count) break;
+		br = B(i) - A(i);
+		br = VecN3(br(2),br(3),br(4));
+		DrawSphere(A(i),radius);
+		DrawCylinder(A(i),br,radius);
+		
+		i = i + 1;
+	}
+}
+
+//script ///////////////////////////////////////////////////////////////////////////////////////
+
+//joint location parameter: 
+param	=	parameter(); 
+
+//input pose from vizualisation window:
+pose	=	set_pose();
+
+//home position:
+p0		=	[0,0,1];
+
+//platfrom joint position:
+B 		= 	platform_joints(pose,p0,param(2));
+//base joint position:
+A 		= 	param(1);
+
+//drawing the stewart platform in vizualisation window:
+draw_stewart(A,B); 
+
+SetTextPrec(5); //number of decimals in output window:
+
+//Length of the platfrom legs
+?Length =act_length(A,B);

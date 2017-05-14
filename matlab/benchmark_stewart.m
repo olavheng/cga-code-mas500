@@ -5,8 +5,8 @@ addpath('.\functions')
 
 %time settings
 animate = 0; %animation on/off
-dt      = 0.05; %step time
-t_end   = 10;   %total time
+dt      = 0.001; %step time
+t_end   = 60;   %total time
 t       = 0:dt:t_end;
 N       = length(t);
 
@@ -49,7 +49,6 @@ end
   tic
  [L_cga,Ld_cga,Ldd_cga]            = StewartIK_CGA(D,Vb,Vbd,t,animate); %IK using conformal geometric algebra
  IK_cga_time = toc
-% 
-% %%Error measure
+
 
 
